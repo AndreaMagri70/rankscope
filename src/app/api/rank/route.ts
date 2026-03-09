@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
     const domain = targetUrl
       .replace(/https?:\/\//, "")
       .replace(/\/.*/, "")
-      .replace(/^www\./, "");
+      .replace(/^www\./, "")   // normalizza input utente
+      .toLowerCase();           // case-insensitive
 
     const params = new URLSearchParams({
       q: keyword,
@@ -58,7 +59,8 @@ export async function POST(req: NextRequest) {
       const linkDomain = (r.link || "")
         .replace(/https?:\/\//, "")
         .replace(/\/.*/, "")
-        .replace(/^www\./, "");
+        .replace(/^www\./, "")   // normalizza risultato Google
+        .toLowerCase();           // case-insensitive
 
       if (linkDomain === domain || linkDomain.endsWith(`.${domain}`)) {
         result = {
