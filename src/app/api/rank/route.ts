@@ -88,11 +88,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-  } catch (error: any) {
-    console.error("Route Error:", error);
-    return NextResponse.json(
-      { error: "Errore interno del server" },
-      { status: 500 }
-    );
-  }
+  } catch (err: any) {
+  return NextResponse.json(
+    { 
+      error: err.message || "Errore interno del server",
+      detail: err.toString(),
+      stack: err.stack?.split("\n").slice(0, 3),
+    },
+    { status: 500 }
+  );
+}
 }
