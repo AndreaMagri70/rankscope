@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
 
     if (!keyword || !targetUrl) {
       return NextResponse.json(
-        { error: "keyword e targetUrl sono obbligatori" },
+        { error: "Keyword e targetUrl sono obbligatori" },
         { status: 400 }
       );
     }
@@ -14,17 +14,17 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.SERPAPI_KEY;
     if (!apiKey || apiKey === "inserisci_qui_la_tua_api_key") {
       return NextResponse.json(
-        { error: "SERPAPI_KEY non configurata nel file .env.local" },
+        { error: "SERPAPI_KEY non configurata correttamente" },
         { status: 500 }
       );
     }
 
-    // Estrai il dominio dall'URL
-    const domain = targetUrl
-      .replace(/https?:\/\//, "")
-      .replace(/\/.*/, "")
-      .replace(/^www\./, "")   // normalizza input utente
-      .toLowerCase();           // case-insensitive
+    // 1. Normalizziamo il target cercato (es: trasforma https://andreamagri.net in andreamagri.net)
+    const targetClean = targetUrl
+      .replace(/https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .split('/')[0] // Prende solo il dominio, ignora eventuali path
+      .toLowerCase();
 
     const params = new URLSearchParams({
       q: keyword,
@@ -37,59 +37,61 @@ export async function POST(req: NextRequest) {
     });
 
     const response = await fetch(
-      `https://serpapi.com/search.json?${params.toString()}`,
+      `https://serpapi.com{params.toString()}`,
       { next: { revalidate: 0 } }
     );
 
-    if (!response.ok) {
-      const errText = await response.text();
+    const data = await response.json();
+
+    // Gestione errori espliciti da SerpAPI (es. crediti esauriti)
+    if (data.error) {
       return NextResponse.json(
-        { error: `SerpAPI error ${response.status}: ${errText}` },
-        { status: response.status }
+        { error: `SerpAPI Error: ${data.error}` },
+        { status: 500 }
       );
     }
 
-    const data = await response.json();
-    const organic: any[] = data.organic_results || [];
+    const organic = data.organic_results || [];
+    let foundPosition = -1;
+    let foundUrl = "";
 
-    // Cerca il dominio nei risultati
-    let result = null;
+    // 2. Regex per il match: cerca il dominio all'inizio della stringa o dopo un punto (sottodomini)
+    // Escapa i punti nel dominio per la Regex (es: andreamagri\.net)
+    const escapedTarget = targetClean.replace(/\./g, "\\.");
+    const domainRegex = new RegExp(`(^|\\.)${escapedTarget}($|\\/)`, "i");
+
     for (let i = 0; i < organic.length; i++) {
-      const r = organic[i];
-      const linkDomain = (r.link || "")
-        .replace(/https?:\/\//, "")
-        .replace(/\/.*/, "")
-        .replace(/^www\./, "")   // normalizza risultato Google
-        .toLowerCase();           // case-insensitive
+      const link = organic[i].link;
+      
+      // Puliamo il link di Google dal protocollo e www per il confronto
+      const linkToCompare = link.replace(/https?:\/\//i, "").replace(/^www\./i, "");
 
-      if (linkDomain === domain || linkDomain.endsWith(`.${domain}`)) {
-        result = {
-          found: true,
-          position: i + 1,
-          url: r.link,
-          title: r.title,
-          snippet: r.snippet || "",
-          displayed_link: r.displayed_link || "",
-        };
+      if (domainRegex.test(linkToCompare)) {
+        foundPosition = i + 1;
+        foundUrl = link;
         break;
       }
     }
 
-    if (!result) {
-      result = {
-        found: false,
-        position: null,
-        url: null,
-        title: null,
-        snippet: "Dominio non trovato nei primi 100 risultati.",
-        displayed_link: null,
-      };
+    if (foundPosition !== -1) {
+      return NextResponse.json({
+        success: true,
+        position: foundPosition,
+        url: foundUrl,
+        keyword: keyword
+      });
+    } else {
+      return NextResponse.json({
+        success: true,
+        position: 0,
+        message: "Non trovato nelle prime 100 posizioni organiche"
+      });
     }
 
-    return NextResponse.json({ keyword, domain, ...result });
-  } catch (err: any) {
+  } catch (error: any) {
+    console.error("Route Error:", error);
     return NextResponse.json(
-      { error: err.message || "Errore interno del server" },
+      { error: "Errore interno del server" },
       { status: 500 }
     );
   }
